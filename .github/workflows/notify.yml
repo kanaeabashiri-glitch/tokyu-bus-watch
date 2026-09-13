@@ -1,0 +1,28 @@
+name: 玉堤小学校バス通過LINE通知
+
+on:
+  schedule:
+    # 05:55 JST に起動（06:55 UTC ではなく前日 20:55 UTC）。
+    # GitHub Actions のスケジュール実行は数分〜十数分遅れることがあるため、
+    # 本来の監視開始時刻(06:00 JST)より少し早めに起動して余裕を持たせている。
+    # スクリプト側で 06:00 JST 未満の間は通知を保留する。
+    - cron: "55 20 * * *"
+  workflow_dispatch: {}   # GitHubの「Run workflow」ボタンから手動実行するため
+
+jobs:
+  watch-bus:
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - run: pip install -r requirements.txt
+
+      - name: バス監視・通知
+        run: python bus_notify.py
+        env:
+          LINE_CHANNEL_ACCESS_TOKEN: ${{ secrets.LINE_CHANNEL_ACCESS_TOKEN }}
