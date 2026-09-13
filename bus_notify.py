@@ -192,9 +192,19 @@ def run_once(debug: bool) -> int:
 
 
 def run_watch_loop() -> int:
-    """6:40 JST まで監視を続け、通過を検知したら通知して終了する。"""
+    """6:40 JST まで監視を続け、通過を検知したら通知して終了する。
+
+    GitHub Actionsの「Run workflow」による手動実行(workflow_dispatch)のときは、
+    時間帯(6:00-6:40)に関わらず1回だけチェックし、結果を必ずLINEに
+    テスト通知として送る（＝GitHub Actions上での動作確認をいつでもできるようにするため）。
+    毎朝のスケジュール実行(schedule)のときは、この特別扱いは行われない。
+    """
+    is_manual_run = os.environ.get("GITHUB_EVENT_NAME") == "workflow_dispatch"
+
     now = datetime.datetime.now(JST)
     print(f"[{now.isoformat()}] 監視開始（{WATCH_END.strftime('%H:%M')} JSTまで）")
+    if is_manual_run:
+        print(f"[{now.isoformat()}] 手動実行を検知。時間帯を無視して1回だけ確認し、テスト通知を送ります。")
 
     ok_checks = 0
     total_checks = 0
@@ -203,7 +213,7 @@ def run_watch_loop() -> int:
         now = datetime.datetime.now(JST)
         current_time = now.timetz().replace(tzinfo=None)
 
-        if current_time > WATCH_END:
+        if not is_manual_run and current_time > WATCH_END:
             print(
                 f"[{now.isoformat()}] 監視終了時刻を過ぎたため終了します。"
                 f"（チェック成功 {ok_checks}/{total_checks} 回）"
@@ -226,9 +236,26 @@ def run_watch_loop() -> int:
             ok_checks += 1
         except Exception as e:
             print(f"[{now.isoformat()}] チェック中にエラー: {e}", file=sys.stderr)
+            if is_manual_run:
+                try:
+                    send_line_broadcast(
+                        f"⚠️ 動作確認テスト: ページ取得・判定でエラーが発生しました。\n{e}"
+                    )
+                except Exception as e2:
+                    print(f"テスト通知の送信にも失敗しました: {e2}", file=sys.stderr)
+                return 1
             passed, detail = False, ""
 
         print(f"[{now.isoformat()}] 通過判定: {passed}  {detail}")
+
+        if is_manual_run:
+            send_line_broadcast(
+                "✅ 動作確認テスト: スクリプトは正常に動作しています。\n"
+                f"現在の「{TARGET_STOP}」通過判定: {'通過' if passed else '未通過'}\n"
+                f"（{now.strftime('%H:%M')} 時点）"
+            )
+            print(f"[{now.isoformat()}] テスト通知を送信しました。終了します。")
+            return 0
 
         if passed and current_time >= WATCH_START:
             send_line_broadcast(
